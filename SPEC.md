@@ -29,6 +29,7 @@ List all configured categories.
 
 - `timectl categories add <name>` — add a new category
 - `timectl categories remove <name>` — remove a category
+- `timectl categories migrate <from> <to>` — rewrite all stored entries from `<from>` to `<to>`, ensure `<to>` exists in config, and remove `<from>` from the category list
 
 ## Storage
 

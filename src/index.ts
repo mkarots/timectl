@@ -8,6 +8,7 @@ import {
   listCategories,
   addCategory,
   removeCategory,
+  migrateCategory,
 } from "./commands/categories.ts";
 
 const program = new Command();
@@ -74,6 +75,15 @@ categories
   .argument("<name>", "Category name")
   .action(async (name: string) => {
     await removeCategory(name);
+  });
+
+categories
+  .command("migrate")
+  .description("Move all time entries from one category to another")
+  .argument("<from>", "Source category name")
+  .argument("<to>", "Target category name")
+  .action(async (from: string, to: string) => {
+    await migrateCategory(from, to);
   });
 
 // Default action for `timectl categories` (no subcommand) → list

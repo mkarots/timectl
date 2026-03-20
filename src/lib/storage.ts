@@ -64,3 +64,63 @@ export async function getRecentEntries(days: number = 30): Promise<TimeEntry[]> 
   from.setDate(from.getDate() - days);
   return getEntriesRange(from, to);
 }
+
+export async function migrateCategoryInAllDayFiles(
+  from: string,
+  to: string
+): Promise<{ filesChanged: number; entriesUpdated: number }> {
+  let filesChanged = 0;
+  let entriesUpdated = 0;
+
+  if (!existsSync(DATA_DIR)) {
+    return { filesChanged, entriesUpdated };
+  }
+
+  const yearEntries = await readdir(DATA_DIR, { withFileTypes: true });
+  for (const yEnt of yearEntries) {
+    if (!yEnt.isDirectory()) continue;
+    const yPath = join(DATA_DIR, yEnt.name);
+    const monthEntries = await readdir(yPath, { withFileTypes: true });
+    for (const mEnt of monthEntries) {
+      if (!mEnt.isDirectory()) continue;
+      const mPath = join(yPath, mEnt.name);
+      const dayFiles = await readdir(mPath, { withFileTypes: true });
+      for (const fEnt of dayFiles) {
+        if (!fEnt.isFile() || !fEnt.name.endsWith(".json")) continue;
+        const filePath = join(mPath, fEnt.name);
+        let raw: string;
+        try {
+          raw = await readFile(filePath, "utf-8");
+        } catch {
+          continue;
+        }
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          console.warn(`timectl: skipping invalid JSON: ${filePath}`);
+          continue;
+        }
+        if (!Array.isArray(parsed)) {
+          console.warn(`timectl: skipping non-array JSON: ${filePath}`);
+          continue;
+        }
+        const entries = parsed as TimeEntry[];
+        let fileDirty = false;
+        for (const entry of entries) {
+          if (entry?.category === from) {
+            entry.category = to;
+            fileDirty = true;
+            entriesUpdated += 1;
+          }
+        }
+        if (fileDirty) {
+          await writeFile(filePath, JSON.stringify(entries, null, 2));
+          filesChanged += 1;
+        }
+      }
+    }
+  }
+
+  return { filesChanged, entriesUpdated };
+}
