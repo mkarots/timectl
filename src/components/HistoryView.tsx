@@ -4,7 +4,7 @@ import type { TimeEntry } from "../types.ts";
 import { getEntries, getEntriesRange } from "../lib/storage.ts";
 import { formatDuration, startOfWeek, startOfMonth } from "../lib/format.ts";
 
-const TABS = ["Today", "This Week", "This Month"] as const;
+const TABS = ["Today", "Yesterday", "This Week", "This Month"] as const;
 type Tab = (typeof TABS)[number];
 
 function aggregateByCategory(entries: TimeEntry[]) {
@@ -41,6 +41,10 @@ export function HistoryView() {
     let promise: Promise<TimeEntry[]>;
     if (currentTab === "Today") {
       promise = getEntries(now);
+    } else if (currentTab === "Yesterday") {
+      const y = new Date(now);
+      y.setDate(y.getDate() - 1);
+      promise = getEntries(y);
     } else if (currentTab === "This Week") {
       promise = getEntriesRange(startOfWeek(now), now);
     } else {
