@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useApp, useInput } from "ink";
 import type { TimeEntry } from "../types.ts";
 import { getEntries, getEntriesRange } from "../lib/storage.ts";
 import { formatDuration, startOfWeek, startOfMonth } from "../lib/format.ts";
@@ -21,10 +21,15 @@ export function HistoryView() {
   const [tabIndex, setTabIndex] = useState(0);
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const { exit } = useApp();
 
   const currentTab = TABS[tabIndex]!;
 
-  useInput((_input, key) => {
+  useInput((input, key) => {
+    if (key.escape || input.toLowerCase() === "q") {
+      exit();
+      return;
+    }
     if (key.rightArrow) setTabIndex((i) => Math.min(i + 1, TABS.length - 1));
     if (key.leftArrow) setTabIndex((i) => Math.max(i - 1, 0));
   });
@@ -128,6 +133,10 @@ export function HistoryView() {
           </Box>
         </Box>
       )}
+
+      <Box marginTop={1}>
+        <Text dimColor>Press Q or Esc to exit</Text>
+      </Box>
     </Box>
   );
 }
