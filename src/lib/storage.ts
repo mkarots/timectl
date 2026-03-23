@@ -58,6 +58,48 @@ export async function getEntriesRange(
   return entries;
 }
 
+export async function updateEntry(entry: TimeEntry): Promise<void> {
+  const date = new Date(entry.startedAt);
+  const filePath = dayFilePath(date);
+
+  if (!existsSync(filePath)) {
+    throw new Error(`No data file found for date of entry ${entry.id}`);
+  }
+
+  const raw = await readFile(filePath, "utf-8");
+  const entries = JSON.parse(raw) as TimeEntry[];
+  const index = entries.findIndex((e) => e.id === entry.id);
+
+  if (index === -1) {
+    throw new Error(`Entry ${entry.id} not found in day file`);
+  }
+
+  // Recalculate duration
+  const durationMinutes =
+    (new Date(entry.stoppedAt).getTime() -
+      new Date(entry.startedAt).getTime()) /
+    60000;
+
+  entries[index] = {
+    ...entry,
+    durationMinutes: Math.round(durationMinutes * 100) / 100,
+  };
+
+  await writeFile(filePath, JSON.stringify(entries, null, 2));
+}
+
+export async function deleteEntry(id: string, date: Date): Promise<void> {
+  const filePath = dayFilePath(date);
+
+  if (!existsSync(filePath)) return;
+
+  const raw = await readFile(filePath, "utf-8");
+  const entries = JSON.parse(raw) as TimeEntry[];
+  const filtered = entries.filter((e) => e.id !== id);
+
+  await writeFile(filePath, JSON.stringify(filtered, null, 2));
+}
+
 export async function getRecentEntries(days: number = 30): Promise<TimeEntry[]> {
   const to = new Date();
   const from = new Date();

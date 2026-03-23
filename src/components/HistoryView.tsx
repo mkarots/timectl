@@ -1,8 +1,15 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import type { TimeEntry } from "../types.ts";
-import { getEntries, getEntriesRange } from "../lib/storage.ts";
+import {
+  getEntries,
+  getEntriesRange,
+  updateEntry,
+  deleteEntry,
+} from "../lib/storage.ts";
 import { formatDuration, startOfWeek, startOfMonth } from "../lib/format.ts";
+import { loadConfig } from "../lib/config.ts";
+import { EditEntryForm } from "./EditEntryForm.tsx";
 
 const TABS = ["Today", "Yesterday", "This Week", "This Month"] as const;
 type Tab = (typeof TABS)[number];
@@ -21,41 +28,116 @@ export function HistoryView() {
   const [tabIndex, setTabIndex] = useState(0);
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedEntryIndex, setSelectedEntryIndex] = useState(0);
+  const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
+  const [categories, setCategories] = useState<string[]>([]);
   const { exit } = useApp();
 
   const currentTab = TABS[tabIndex]!;
 
-  useInput((input, key) => {
-    if (key.escape || input.toLowerCase() === "q") {
-      exit();
-      return;
-    }
-    if (key.rightArrow) setTabIndex((i) => Math.min(i + 1, TABS.length - 1));
-    if (key.leftArrow) setTabIndex((i) => Math.max(i - 1, 0));
-  });
-
+  // Load categories on mount
   useEffect(() => {
+    loadConfig().then((config) => setCategories(config.categories));
+  }, []);
+
+  // Load entries for current tab
+  const loadEntries = useCallback(async () => {
     setLoading(true);
     const now = new Date();
 
-    let promise: Promise<TimeEntry[]>;
+    let result: TimeEntry[];
     if (currentTab === "Today") {
-      promise = getEntries(now);
+      result = await getEntries(now);
     } else if (currentTab === "Yesterday") {
       const y = new Date(now);
       y.setDate(y.getDate() - 1);
-      promise = getEntries(y);
+      result = await getEntries(y);
     } else if (currentTab === "This Week") {
-      promise = getEntriesRange(startOfWeek(now), now);
+      result = await getEntriesRange(startOfWeek(now), now);
     } else {
-      promise = getEntriesRange(startOfMonth(now), now);
+      result = await getEntriesRange(startOfMonth(now), now);
     }
 
-    promise.then((e) => {
-      setEntries(e);
-      setLoading(false);
-    });
+    setEntries(result);
+    setLoading(false);
   }, [currentTab]);
+
+  useEffect(() => {
+    loadEntries();
+  }, [loadEntries]);
+
+  // Reset selection when tab changes
+  useEffect(() => {
+    setSelectedEntryIndex(0);
+  }, [currentTab]);
+
+  // Clamp selection when entries shrink
+  useEffect(() => {
+    if (selectedEntryIndex >= entries.length && entries.length > 0) {
+      setSelectedEntryIndex(entries.length - 1);
+    }
+  }, [entries.length, selectedEntryIndex]);
+
+  // History view keyboard handler — disabled during editing
+  useInput(
+    (input, key) => {
+      if (key.escape || input.toLowerCase() === "q") {
+        exit();
+        return;
+      }
+      if (key.rightArrow)
+        setTabIndex((i) => Math.min(i + 1, TABS.length - 1));
+      if (key.leftArrow) setTabIndex((i) => Math.max(i - 1, 0));
+
+      // Entry navigation
+      if (key.upArrow)
+        setSelectedEntryIndex((i) => Math.max(i - 1, 0));
+      if (key.downArrow)
+        setSelectedEntryIndex((i) =>
+          Math.min(i + 1, entries.length - 1)
+        );
+
+      // Open edit
+      if (
+        (input.toLowerCase() === "e" || key.return) &&
+        entries.length > 0
+      ) {
+        setEditingEntry(entries[selectedEntryIndex] ?? null);
+      }
+    },
+    { isActive: editingEntry === null }
+  );
+
+  // Edit callbacks
+  const handleSave = async (updated: TimeEntry) => {
+    await updateEntry(updated);
+    setEditingEntry(null);
+    await loadEntries();
+  };
+
+  const handleCancel = () => {
+    setEditingEntry(null);
+  };
+
+  const handleDelete = async (id: string) => {
+    const date = new Date(editingEntry!.startedAt);
+    await deleteEntry(id, date);
+    setEditingEntry(null);
+    await loadEntries();
+  };
+
+  // Render edit form when editing
+  if (editingEntry) {
+    return (
+      <EditEntryForm
+        entry={editingEntry}
+        categories={categories}
+        onSave={handleSave}
+        onCancel={handleCancel}
+        onDelete={handleDelete}
+      />
+    );
+  }
 
   const { map, total } = aggregateByCategory(entries);
 
@@ -73,7 +155,6 @@ export function HistoryView() {
             {tab}
           </Text>
         ))}
-        <Text dimColor>← → to switch tabs</Text>
       </Box>
 
       {loading ? (
@@ -121,9 +202,12 @@ export function HistoryView() {
             <Text bold underline>
               Entries
             </Text>
-            {entries.map((e) => (
+            {entries.map((e, index) => (
               <Box key={e.id} gap={1}>
-                <Text dimColor>
+                <Text color={index === selectedEntryIndex ? "cyan" : undefined}>
+                  {index === selectedEntryIndex ? "►" : " "}
+                </Text>
+                <Text dimColor={index !== selectedEntryIndex}>
                   {new Date(e.startedAt).toLocaleTimeString([], {
                     hour: "2-digit",
                     minute: "2-digit",
@@ -139,7 +223,7 @@ export function HistoryView() {
       )}
 
       <Box marginTop={1}>
-        <Text dimColor>Press Q or Esc to exit</Text>
+        <Text dimColor>↑↓: Select  E/Enter: Edit  ←→: Tabs  Q: Quit</Text>
       </Box>
     </Box>
   );
